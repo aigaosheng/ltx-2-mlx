@@ -836,7 +836,7 @@ class DistilledPipeline(TI2VidTwoStagesPipeline):
             stage2_x0_model = X0Model(TiledLTXModel(self.dit, tiler_2))
 
         self._pre_denoise_flush(video_state_2, audio_state_2)
-        sparse = self._start_stage2_sparse_attention(sigmas_2)
+        sparse = self._start_stage2_sparse_attention(sigmas_2, default_video_tokens=video_state_2.latent.shape[1])
         try:
             output_2 = self._run_denoise_loop(
                 model=stage2_x0_model,

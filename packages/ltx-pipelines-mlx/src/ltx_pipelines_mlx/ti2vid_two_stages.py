@@ -33,7 +33,11 @@ from ltx_core_mlx.loader.fuse_loras import apply_loras
 from ltx_core_mlx.loader.primitives import LoraStateDictWithStrength, StateDict
 from ltx_core_mlx.loader.sd_ops import LTXV_LORA_COMFY_RENAMING_MAP
 from ltx_core_mlx.model.transformer.model import LTXModel, X0Model
-from ltx_core_mlx.model.transformer.sparse_attention import SparseAttentionState
+from ltx_core_mlx.model.transformer.sparse_attention import (
+    SOL_DEFAULT_MIN_VIDEO_TOKENS,
+    SOL_DEFAULT_TAUS,
+    SparseAttentionState,
+)
 from ltx_core_mlx.model.upsampler import LatentUpsampler
 from ltx_core_mlx.utils.memory import aggressive_cleanup
 from ltx_core_mlx.utils.positions import compute_audio_positions, compute_audio_token_count, compute_video_positions
@@ -222,9 +226,13 @@ class TI2VidTwoStagesPipeline(BasePipeline):
         self._recast_after_inplace_fusion(dit)
 
     def _start_stage2_sparse_attention(
-        self, sigmas: list[float], evaluations: list[tuple[float, int]] | None = None
+        self,
+        sigmas: list[float],
+        evaluations: list[tuple[float, int]] | None = None,
+        *,
+        default_video_tokens: int | None = None,
     ) -> SparseAttentionState | None:
-        """Turn on block-sparse video self-attention for stage 2 when ``LTX2_SOL_TAU`` asks for it.
+        """Turn on block-sparse video self-attention for stage 2 when ``LTX2_SOL_TAU`` asks for it, or by default.
 
         One tau per stage-2 step, matched to the step's sigma (the last tau repeats); the terminal sigma 0 is never
         evaluated. Covers every pipeline whose stage 2 runs here: ``generate --distilled`` / ``--dfr``,
@@ -236,21 +244,41 @@ class TI2VidTwoStagesPipeline(BasePipeline):
             evaluations: ``(sigma, step)`` of every model evaluation when a sampler evaluates more than once per
                 step (res_2s: :func:`~ltx_pipelines_mlx.utils.samplers.res2s_evaluation_sigmas`); each gets its
                 step's tau. ``None``: one evaluation per step at ``sigmas[:-1]``.
+            default_video_tokens: The stage-2 video sequence length, passed only by the stages the default covers
+                (``DistilledPipeline._stage2``). With ``LTX2_SOL_TAU`` unset, :data:`SOL_DEFAULT_TAUS` apply when it
+                reaches :data:`SOL_DEFAULT_MIN_VIDEO_TOKENS`. ``None``: no default (the dev stage 2 stays opt-in).
         """
-        if self.sol_taus is None or self.dit is None:
+        taus = self.sol_taus
+        by_default = (
+            taus is None
+            and getattr(self, "sol_default", False)
+            and default_video_tokens is not None
+            and default_video_tokens >= SOL_DEFAULT_MIN_VIDEO_TOKENS
+        )
+        if by_default:
+            taus = SOL_DEFAULT_TAUS
+        if taus is None or self.dit is None:
             return None
         if evaluations is None:
-            state = SparseAttentionState(taus=self.sol_taus, sigmas=tuple(sigmas[:-1]))
+            state = SparseAttentionState(taus=taus, sigmas=tuple(sigmas[:-1]))
         else:
-            last = len(self.sol_taus) - 1
+            last = len(taus) - 1
             state = SparseAttentionState(
-                taus=tuple(self.sol_taus[min(step, last)] for _, step in evaluations),
+                taus=tuple(taus[min(step, last)] for _, step in evaluations),
                 sigmas=tuple(sigma for sigma, _ in evaluations),
             )
         self.dit.set_sparse_attention(state)
         if self.verbose:
             steps = ", ".join(f"sigma {s:g}: tau {state.tau_for_sigma(s):g}" for s in state.sigmas)
-            print(f"[sparse-attention] stage 2 video self-attention, blocks 1+: {steps}", file=sys.stderr, flush=True)
+            why = (
+                f" (default from {SOL_DEFAULT_MIN_VIDEO_TOKENS:,} video tokens, {default_video_tokens:,} here;"
+                " LTX2_SOL_TAU=off for dense)"
+                if by_default
+                else ""
+            )
+            print(
+                f"[sparse-attention] stage 2 video self-attention, blocks 1+: {steps}{why}", file=sys.stderr, flush=True
+            )
         return state
 
     def _stop_stage2_sparse_attention(self, state: SparseAttentionState | None) -> None:

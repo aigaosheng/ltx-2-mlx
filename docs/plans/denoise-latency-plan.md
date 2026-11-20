@@ -67,7 +67,9 @@ Fourth pass (branch `perf/denoise-remaining`, M5 Pro 48 GB, 2.5 q8, float16):
 
   The same three arms on the Lisbon wide shot (576×1024, same seed and prompt), stage-2 s/step dense → Sol: 29.8 → 26.5 (−11 %), 51.1 → 47.9 (−6 %), 73.2 → 65.8 (−10 %); whole render −9 % / −5 % / −6 %; WER 0 everywhere; PSNR 25.7–26.4 dB. Every ArcFace drop is within the 0.05 gate, `--dfr` included (the M1 Max's 0.09 did not reproduce on this image). Frames are the same picture (at frame 200 of the 17,856-token pair only a blink lands differently), with no block artifacts. The speed-up is smaller than the M1 Max's (−21–36 % per stage-2 step): the M5 Pro's dense attention is relatively faster. At 9,216 tokens it is within noise (−11 % and +8 % on the two images); from 14,400 tokens up it is −6 to −16 %. If a default ships, it should be `--distilled` / `--dfr` stage 2 from ~14k video tokens, as its own `feat!:` PR (it changes samples at the default settings). One seed per arm, on battery.
 
-Still open: item 12 (TeaCache on 2.5: ~1h45 calibration per sampler). Item 8 needs only the decision on the default (the gate above passes); shipping it is a `feat!:` PR.
+- Item 8 default: shipped on `feat/sol-default-14k`. With `LTX2_SOL_TAU` unset the distilled stage 2 runs Sol from 14,000 video tokens (`SOL_DEFAULT_MIN_VIDEO_TOKENS`); below that, and on the dev stage 2, unset stays dense. sha256: unset at 17,856 tokens equals the explicit-tau render, unset at 9,216 the dense one.
+
+Still open: item 12 (TeaCache on 2.5: ~1h45 calibration per sampler).
 
 Earlier review notes:
 - **Item 1 (STG prefix sharing): implemented** (now committed). `BlockPrefix`, `capture_prefix` / `resume_prefix` on `LTXModel.__call__`, `stg_block_prefix` in `samplers.py`, `LTX2_STG_PREFIX_REUSE`, `tests/test_stg_prefix_reuse.py`.
