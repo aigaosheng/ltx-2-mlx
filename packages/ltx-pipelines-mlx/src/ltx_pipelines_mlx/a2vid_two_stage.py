@@ -277,7 +277,7 @@ class A2VidPipelineTwoStage(TI2VidTwoStagesPipeline):
                 encoded verbatim.
             enable_teacache: When True, run stage 1 with a TeaCacheController
                 built from the Euler coefficients calibrated for
-                ``--two-stage`` (opt-in, default False). Raises on LTX-2.5 packs.
+                ``--two-stage`` for the pack's generation (opt-in, default False).
             teacache_thresh: Optional override for the preset's default
                 ``rel_l1_thresh``. Higher = more skipping = faster but
                 lossier. Ignored when ``enable_teacache=False``.
@@ -287,7 +287,6 @@ class A2VidPipelineTwoStage(TI2VidTwoStagesPipeline):
         """
         if audio_path is None:
             raise ValueError("audio_path is required for A2VidPipelineTwoStage")
-        self._check_teacache_supported(enable_teacache)
         num_frames = snap_num_frames(num_frames)
 
         if audio_max_duration is None:

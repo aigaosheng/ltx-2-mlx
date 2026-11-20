@@ -52,13 +52,24 @@ LTX2_HQ_TEACACHE_COEFFICIENTS: list[float] = [
 ]
 LTX2_HQ_TEACACHE_THRESH: float = 1.0  # tune per use case
 
+# LTX-2.5 res_2s calibration (q8 pack, dev model, 15 steps -- the HQ default --, 480x704x97, stg 0, seed 2026; M5 Pro,
+# 2026-11-20): 5 prompts x 14 deltas = 70, delta_in in [0.138, 1.016]. One residual delta of 15.5 (step 3 of one
+# prompt; the others stay below 1.3) was dropped before the fit: with it no degree is stable. Degree 1 on the other
+# 69, Pearson 0.59. Same skip-rate cliff as 2.3 when the recorded deltas are replayed: 7 % at 0.5, 25 % at 0.75,
+# 48 % at 1.0.
+LTX25_HQ_TEACACHE_COEFFICIENTS: list[float] = [
+    1.0018952672611978,
+    0.07067110480513057,
+]
+LTX25_HQ_TEACACHE_THRESH: float = 1.0
 
-def _build_hq_teacache_controller(num_steps: int, thresh: float | None) -> TeaCacheController:
+
+def _build_hq_teacache_controller(num_steps: int, thresh: float | None, *, ltx25: bool = False) -> TeaCacheController:
     """Construct an HQ-specific TeaCacheController.
 
     Mirrors :func:`ltx_pipelines_mlx.ti2vid_two_stages._build_teacache_controller`
     but uses ``LTX2_HQ_TEACACHE_COEFFICIENTS`` / ``LTX2_HQ_TEACACHE_THRESH``
-    so res_2s gets coefficients fit on its own dynamics.
+    (``LTX25_HQ_TEACACHE_*`` with ``ltx25``) so res_2s gets coefficients fit on its own dynamics.
     """
     if not LTX2_HQ_TEACACHE_COEFFICIENTS:
         raise RuntimeError(
@@ -66,10 +77,15 @@ def _build_hq_teacache_controller(num_steps: int, thresh: float | None) -> TeaCa
             "run scripts/calibrate_teacache.py --hq to generate them, then paste "
             "the values into LTX2_HQ_TEACACHE_COEFFICIENTS in this file."
         )
+    coefficients, default_thresh = (
+        (LTX25_HQ_TEACACHE_COEFFICIENTS, LTX25_HQ_TEACACHE_THRESH)
+        if ltx25
+        else (LTX2_HQ_TEACACHE_COEFFICIENTS, LTX2_HQ_TEACACHE_THRESH)
+    )
     return TeaCacheController(
         num_steps=num_steps,
-        rel_l1_thresh=thresh if thresh is not None else LTX2_HQ_TEACACHE_THRESH,
-        coefficients=LTX2_HQ_TEACACHE_COEFFICIENTS,
+        rel_l1_thresh=thresh if thresh is not None else default_thresh,
+        coefficients=coefficients,
     )
 
 
@@ -94,7 +110,7 @@ class TI2VidTwoStagesHQPipeline(TI2VidTwoStagesPipeline):
         """Same as the Euler base, with the coefficients calibrated on res_2s."""
         if not enable_teacache:
             return None
-        controller = _build_hq_teacache_controller(stage1_steps, teacache_thresh)
+        controller = _build_hq_teacache_controller(stage1_steps, teacache_thresh, ltx25=self._is_25)
         controller.reset()
         return controller
 
@@ -134,7 +150,6 @@ class TI2VidTwoStagesHQPipeline(TI2VidTwoStagesPipeline):
         """
         self._require_num_frames_source(num_frames)
         self._require_generated_keyframes_support(generated_keyframes)
-        self._check_teacache_supported(enable_teacache)
 
         # --- Text encoding (Prompt Relay: encode the combined prompt) ---
         encode_prompt, relay_token_ranges = self._prompt_relay_setup(prompt, prompt_relay)

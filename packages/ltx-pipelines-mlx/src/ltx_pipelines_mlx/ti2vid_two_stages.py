@@ -75,13 +75,24 @@ LTX2_TEACACHE_COEFFICIENTS: list[float] = [
 ]
 LTX2_TEACACHE_THRESH: float = 0.5
 
+# The same calibration on LTX-2.5 (q8 pack, dev model, 30 Euler steps, 480x704x97, stg 0, seed 2026; M5 Pro,
+# 2026-11-20): 5 prompts x 29 deltas = 145, delta_in in [0.024, 0.543], Pearson 0.63. The robust fitter picked
+# degree 1 again. Replaying the recorded deltas through the controller: 35 % of the steps skipped at 0.5, 61 % at 1.0
+# (the 2.3 polynomial on the same deltas: 17 % / 51 %).
+LTX25_TEACACHE_COEFFICIENTS: list[float] = [
+    2.244211684707125,
+    0.21411731539449314,
+]
+LTX25_TEACACHE_THRESH: float = 0.5
 
-def _build_teacache_controller(num_steps: int, thresh: float | None) -> TeaCacheController:
+
+def _build_teacache_controller(num_steps: int, thresh: float | None, *, ltx25: bool = False) -> TeaCacheController:
     """Construct a TeaCacheController for LTX-2 stage 1.
 
     Args:
         num_steps: Number of denoising steps for stage 1.
         thresh: Optional override for the default ``rel_l1_thresh``.
+        ltx25: Use the LTX-2.5 calibration (``LTX25_TEACACHE_*``) instead of the LTX-2.3 one.
 
     Returns:
         Configured ``TeaCacheController``.
@@ -96,10 +107,15 @@ def _build_teacache_controller(num_steps: int, thresh: float | None) -> TeaCache
             "scripts/calibrate_teacache.py to generate them, then paste the "
             "values into LTX2_TEACACHE_COEFFICIENTS in this file."
         )
+    coefficients, default_thresh = (
+        (LTX25_TEACACHE_COEFFICIENTS, LTX25_TEACACHE_THRESH)
+        if ltx25
+        else (LTX2_TEACACHE_COEFFICIENTS, LTX2_TEACACHE_THRESH)
+    )
     return TeaCacheController(
         num_steps=num_steps,
-        rel_l1_thresh=thresh if thresh is not None else LTX2_TEACACHE_THRESH,
-        coefficients=LTX2_TEACACHE_COEFFICIENTS,
+        rel_l1_thresh=thresh if thresh is not None else default_thresh,
+        coefficients=coefficients,
     )
 
 
@@ -397,9 +413,8 @@ class TI2VidTwoStagesPipeline(BasePipeline):
     ) -> TeaCacheController | None:
         """Build a fresh stage-1 TeaCacheController, or ``None`` when TeaCache is off.
 
-        Uses the coefficients calibrated on the Euler sampler (``guided_denoise_loop``);
-        the HQ pipeline overrides this with its res_2s calibration. Callers run
-        :meth:`_check_teacache_supported` up front, before any model load.
+        Uses the coefficients calibrated on the Euler sampler (``guided_denoise_loop``) for the
+        pack's generation (2.3 or 2.5); the HQ pipeline overrides this with its res_2s calibration.
 
         Args:
             enable_teacache: Whether TeaCache was requested.
@@ -411,7 +426,7 @@ class TI2VidTwoStagesPipeline(BasePipeline):
         """
         if not enable_teacache:
             return None
-        controller = _build_teacache_controller(stage1_steps, teacache_thresh)
+        controller = _build_teacache_controller(stage1_steps, teacache_thresh, ltx25=self._is_25)
         controller.reset()
         return controller
 
@@ -542,7 +557,6 @@ class TI2VidTwoStagesPipeline(BasePipeline):
         """
         self._require_num_frames_source(num_frames)
         self._require_generated_keyframes_support(generated_keyframes)
-        self._check_teacache_supported(enable_teacache)
 
         # --- Text encoding (Prompt Relay: encode the combined prompt; the negative
         # prompt is a single global prompt, unaffected by the local prompts) ---

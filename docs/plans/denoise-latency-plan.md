@@ -69,7 +69,7 @@ Fourth pass (branch `perf/denoise-remaining`, M5 Pro 48 GB, 2.5 q8, float16):
 
 - Item 8 default: shipped on `feat/sol-default-14k`. With `LTX2_SOL_TAU` unset the distilled stage 2 runs Sol from 14,000 video tokens (`SOL_DEFAULT_MIN_VIDEO_TOKENS`); below that, and on the dev stage 2, unset stays dense. sha256: unset at 17,856 tokens equals the explicit-tau render, unset at 9,216 the dense one.
 
-Still open: item 12 (TeaCache on 2.5: ~1h45 calibration per sampler).
+Nothing left open: item 12 (TeaCache on 2.5) is done; see its entry under Phase 4.
 
 Earlier review notes:
 - **Item 1 (STG prefix sharing): implemented** (now committed). `BlockPrefix`, `capture_prefix` / `resume_prefix` on `LTXModel.__call__`, `stg_block_prefix` in `samplers.py`, `LTX2_STG_PREFIX_REUSE`, `tests/test_stg_prefix_reuse.py`.
@@ -165,6 +165,7 @@ Expected: ~15% on two-stage stage 1 (most of it from item 1, already in the tree
 
 ### Phase 4 (optional, changes samples): step reduction
 12. **Recalibrate TeaCache for the 2.5 dev stage 1** using the existing `packages/ltx-pipelines-mlx/src/ltx_pipelines_mlx/scripts/calibrate_teacache.py` / `fit_teacache_poly.py` (~1h45 per sampler). It is refused on 2.5 today (`_base.py:352-368`). Note that TeaCache disables STG prefix sharing (item 1), so measure against the item-1 baseline.
+    - Done on `feat/teacache-ltx25` (M5 Pro, 2.5 q8, 2026-11-20): 21 min Euler + 28 min res_2s calibration (not 1h45 each on this host). `LTX25_TEACACHE_COEFFICIENTS = [2.244, 0.214]` (Pearson 0.63) and `LTX25_HQ_TEACACHE_COEFFICIENTS = [1.002, 0.071]` (Pearson 0.59, one outlier dropped), default thresholds 0.5 / 1.0; the 2.5 refusal is gone from `--two-stage`, `--two-stages-hq` and `a2v`. Stage 1 with TeaCache (704×480×97, seed 5, STG on, i.e. against the item-1 baseline): 1.42× Euler, 1.85× res_2s; whole render −24 % / −34 %; clean, WER 0, another sample at the same seed as on 2.3. Details in `CLAUDE.md` › TeaCache.
 
 ## Critical files
 - `packages/ltx-core-mlx/src/ltx_core_mlx/model/transformer/{model.py,transformer.py,attention.py,rope.py,adaln.py,feed_forward.py}`

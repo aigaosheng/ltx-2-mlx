@@ -275,9 +275,9 @@ def _add_teacache_args(parser: argparse.ArgumentParser) -> None:
         "--enable-teacache",
         action="store_true",
         help=(
-            "generate --two-stage / --two-stages-hq and a2v (not --distilled / --dfr) only (LTX-2.3 packs): enable "
-            "TeaCache stage-1 acceleration (opt-in, ~1.46x speedup on Euler at default "
-            "thresh; see CLAUDE.md)"
+            "generate --two-stage / --two-stages-hq and a2v (not --distilled / --dfr) only: enable "
+            "TeaCache stage-1 acceleration with the coefficients calibrated for the pack (LTX-2.3 or 2.5; opt-in, "
+            "~1.46x speedup on Euler at default thresh; see CLAUDE.md)"
         ),
     )
     parser.add_argument(

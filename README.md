@@ -173,7 +173,7 @@ ltx-2-mlx generate --model /path/to/ltx-2.5-mlx-q8 --two-stage \
 | `lipdub` | not yet on 2.5 (no 2.5 Dub-It LoRA published) |
 | `hdr-ic-lora` | supported, 2.5 only (single-stage ACEScct SDR-to-HDR; Experimental, validated end to end on real weights) |
 | `enhance` / `--enhance-prompt` | raises a clear error (Gemma 3-only) |
-| `--enable-teacache` | raises a clear error (not calibrated for 2.5) |
+| `--enable-teacache` | supported on `--two-stage`, `--two-stages-hq` and `a2v` (2.5-specific calibration: 1.42× / 1.85× stage 1) |
 | Prompt Relay | supported — validated e2e on 2.5 `--distilled` and the `--dfr` base path; token ranges pinned against the pack's Gemma-4 tokenizer |
 | Modality tiling | validated on 2.5 `--distilled` (`--tile-frames 2`, unconditioned and with an end anchor) |
 | Diffusion video decoder | opt-in `--video-decoder diffusion` (experimental; auto-tiled above the decode budget, `--diffvae-tile` override); conv stays the default |
