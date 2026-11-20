@@ -1877,13 +1877,29 @@ ic-lora / dfr / `--lora` call sites; the default path identical to the fusion; e
 
 ### Block-sparse stage-2 attention (`LTX2_SOL_TAU`)
 
-Opt-in port of NVIDIA's Sol-Attn routing (arXiv 2607.24027; reference code in NVlabs/Sana, `sol-engine` branch,
+Port of NVIDIA's Sol-Attn routing (arXiv 2607.24027; reference code in NVlabs/Sana, `sol-engine` branch,
 Apache-2.0) to the video self-attention of the distilled stage 2, the scope NVIDIA's own LTX-2.5 distilled config uses
 (`models/ltx25/RTX5090/attention.py`): `attn1` only, block 0 dense, one threshold per stage-2 step.
 
 ```bash
-LTX2_SOL_TAU=1.0,1.25,1.5 ltx-2-mlx generate --distilled ...   # NVIDIA's values; unset or "off" = dense (default)
+ltx-2-mlx generate --distilled ...                             # unset: on from 14,000 stage-2 video tokens (default)
+LTX2_SOL_TAU=off ltx-2-mlx generate --distilled ...            # always dense
+LTX2_SOL_TAU=1.0,1.25,1.5 ltx-2-mlx generate --distilled ...   # explicit taus: on at any size, dev stage 2 included
 ```
+
+**Default (changes the default output of large distilled renders).** With `LTX2_SOL_TAU` unset,
+`DistilledPipeline._stage2` (`generate --distilled` / `--dfr`, `a2v --distilled` / `--dfr`, `extend --distilled`) runs
+sparse with `SOL_DEFAULT_TAUS = (1.0, 1.25, 1.5)` when its stage-2 video sequence (generated tokens plus appended
+conditioning tokens, as the `[estimate]` line counts them) has at least `SOL_DEFAULT_MIN_VIDEO_TOKENS = 14_000` tokens
+(`sol_default_from_env`, `_start_stage2_sparse_attention(..., default_video_tokens=...)`). Below it, and in the dev
+stage 2 of `--two-stage`, `--two-stages-hq` and `a2v` (not evaluated), unset stays dense, byte-identical to before.
+`off` is dense everywhere; an explicit list applies to every stage 2 at any size, as before. Gate (M5 Pro 48 GB, 2.5 q8,
+float16, I2V from a front-facing close-up, seed 7, one render per arm, dense → Sol): `--distilled` 1024×576×121 (9,216
+tokens) stage-2 step 28.1 → 30.3 s, ArcFace median 0.720 → 0.694; `--dfr` ×121 (14,400) 59.6 → 51.5 s (−14 %), 0.806
+→ 0.790; `--distilled` ×241 (17,856) 76.8 → 64.2 s (−16 %), 0.697 → 0.682; Whisper WER 0 in every arm, 28.6–29.4 dB
+PSNR against dense. A second image gave −11 % / −6 % / −10 % at the same sizes: within noise at 9k, hence the 14k
+threshold. Checked end to end: unset at 17,856 tokens is byte-identical (sha256) to the explicit-tau render, unset at
+9,216 to the dense one.
 
 How it works (`model/transformer/sparse_attention.py`):
 - Every head's sequence is cut into 64-token blocks with a query and a key centroid each. A query block attends exactly

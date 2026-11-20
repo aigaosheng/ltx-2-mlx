@@ -33,6 +33,7 @@ from ltx_core_mlx.model.transformer.sparse_attention import (
     block_summaries,
     build_route,
     kernel_available,
+    sol_default_from_env,
     sol_taus_from_env,
     sparse_self_attention,
 )
@@ -555,6 +556,53 @@ def test_stage_2_turns_it_off_when_the_loop_raises(tmp_path, monkeypatch):
         pipe.generate_two_stage(prompt="a fox", height=128, width=128, num_frames=9, frame_rate=24.0, seed=7)
     assert dit.sparse_attention is None
     assert len(dit.history) == 2 and dit.history[-1] is None
+
+
+@pytest.mark.parametrize(("value", "default"), [(None, True), ("", True), (" ", True), ("off", False), ("1.0", False)])
+def test_env_default_only_when_unset(monkeypatch, value, default):
+    if value is None:
+        monkeypatch.delenv("LTX2_SOL_TAU", raising=False)
+    else:
+        monkeypatch.setenv("LTX2_SOL_TAU", value)
+    assert sol_default_from_env() is default
+
+
+@pytest.mark.parametrize(
+    ("env", "tokens", "expected"),
+    [
+        (None, sa.SOL_DEFAULT_MIN_VIDEO_TOKENS, sa.SOL_DEFAULT_TAUS),  # default, at the threshold
+        (None, sa.SOL_DEFAULT_MIN_VIDEO_TOKENS - 1, None),  # default, below it
+        (None, None, None),  # a stage the default does not cover (dev stage 2)
+        ("off", 10**6, None),  # off wins at any size
+        ("2.0", 64, (2.0,)),  # explicit taus apply at any size
+    ],
+)
+def test_stage2_default_by_token_count(tmp_path, monkeypatch, env, tokens, expected):
+    pipe, dit, _ = _stubbed_distilled(tmp_path, monkeypatch, env)
+    state = pipe._start_stage2_sparse_attention([0.9, 0.7, 0.4, 0.0], default_video_tokens=tokens)
+    if expected is None:
+        assert state is None and dit.history == []
+    else:
+        assert state is not None and state.taus == expected
+        assert dit.history == [state]
+        pipe._stop_stage2_sparse_attention(state)
+        assert dit.history == [state, None]
+
+
+def test_distilled_stage2_passes_its_video_token_count(tmp_path, monkeypatch):
+    pipe, dit, seen = _stubbed_distilled(tmp_path, monkeypatch, None)
+    assert pipe.sol_default is True
+    calls = []
+    start = pipe._start_stage2_sparse_attention
+
+    def spy(sigmas, evaluations=None, *, default_video_tokens=None):
+        calls.append(default_video_tokens)
+        return start(sigmas, evaluations, default_video_tokens=default_video_tokens)
+
+    pipe._start_stage2_sparse_attention = spy  # type: ignore[method-assign]
+    pipe.generate_two_stage(prompt="a fox", height=128, width=128, num_frames=9, frame_rate=24.0, seed=7)
+    assert calls == [4 * 4 * 2]  # 128 px / 32 per axis x 2 latent frames: below the threshold, dense
+    assert seen == [None, None] and dit.history == []
 
 
 def test_malformed_env_fails_when_the_pipeline_is_built(tmp_path, monkeypatch):
