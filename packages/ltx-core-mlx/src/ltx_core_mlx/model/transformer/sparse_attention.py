@@ -24,7 +24,7 @@ Entry points: :func:`sparse_self_attention` (q, k, v -> output), :class:`SparseA
 :meth:`LTXModel.set_sparse_attention` shares with the ``attn1`` modules), :func:`sol_taus_from_env`,
 :func:`sol_default_from_env`.
 
-Default: with ``LTX2_SOL_TAU`` unset, the distilled stage 2 runs sparse with :data:`SOL_DEFAULT_TAUS` once its video
+Default: with ``LTX2_SOL_TAU`` unset, every stage 2 (distilled and dev) runs sparse with :data:`SOL_DEFAULT_TAUS` once its video
 sequence reaches :data:`SOL_DEFAULT_MIN_VIDEO_TOKENS` tokens; ``off`` keeps it dense, an explicit list applies at any size.
 """
 
@@ -49,8 +49,9 @@ BLOCK = 64
 MIN_TOKENS = 4096
 #: Taus of the default (NVIDIA's LTX-2.5 distilled config), one per stage-2 step.
 SOL_DEFAULT_TAUS: tuple[float, ...] = (1.0, 1.25, 1.5)
-#: With ``LTX2_SOL_TAU`` unset, the distilled stage 2 runs sparse from this many video tokens (M5 Pro, 2.5 q8:
-#: stage-2 step -14 % at 14,400 and -16 % at 17,856 tokens, within noise at 9,216; ArcFace drop <= 0.026).
+#: With ``LTX2_SOL_TAU`` unset, every stage 2 runs sparse from this many video tokens (M5 Pro, 2.5 q8: distilled
+#: stage-2 step -14 % at 14,400 and -16 % at 17,856 tokens, dev stage 2 -15 to -29 % at 17,856; within noise at
+#: 9,216; ArcFace drop <= 0.028).
 SOL_DEFAULT_MIN_VIDEO_TOKENS = 14_000
 
 

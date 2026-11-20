@@ -11,6 +11,7 @@ from ltx_core_mlx.model.transformer.sparse_attention import SparseAttentionState
 from ltx_pipelines_mlx.utils.samplers import DenoiseOutput, res2s_evaluation_sigmas
 
 NVIDIA_TAUS = (1.0, 1.25, 1.5)
+STAGE_2_SIGMAS_LIST = [0.909375, 0.725, 0.421875, 0.0]
 
 
 class _RecordingDit:
@@ -110,6 +111,38 @@ def test_default_never_touches_the_dit(make, tmp_path, monkeypatch):
     pipe, dit, seen = make(tmp_path, monkeypatch, None)
     _generate(pipe)
     assert seen == [None, None] and dit.history == []
+
+
+@pytest.mark.parametrize("make", [_two_stage, _hq])
+def test_dev_stage2_passes_its_video_token_count(make, tmp_path, monkeypatch):
+    """Unset LTX2_SOL_TAU: the dev stage 2 hands its token count to the 14k default (dense below it)."""
+    pipe, dit, seen = make(tmp_path, monkeypatch, None)
+    assert pipe.sol_default is True
+    calls = []
+    start = pipe._start_stage2_sparse_attention
+
+    def spy(sigmas, evaluations=None, *, default_video_tokens=None):
+        calls.append(default_video_tokens)
+        return start(sigmas, evaluations, default_video_tokens=default_video_tokens)
+
+    pipe._start_stage2_sparse_attention = spy  # type: ignore[method-assign]
+    _generate(pipe)
+    assert calls == [4 * 4 * 2]  # 128 px / 32 per axis x 2 latent frames: below the threshold, dense
+    assert seen == [None, None] and dit.history == []
+
+
+@pytest.mark.parametrize("make", [_two_stage, _hq])
+def test_dev_stage2_default_on_from_the_threshold(make, tmp_path, monkeypatch):
+    from ltx_core_mlx.model.transformer.sparse_attention import SOL_DEFAULT_MIN_VIDEO_TOKENS, SOL_DEFAULT_TAUS
+
+    pipe, dit, _ = make(tmp_path, monkeypatch, None)
+    evaluations = res2s_evaluation_sigmas(list(STAGE_2_SIGMAS_LIST)) if make is _hq else None
+    state = pipe._start_stage2_sparse_attention(
+        STAGE_2_SIGMAS_LIST, evaluations, default_video_tokens=SOL_DEFAULT_MIN_VIDEO_TOKENS
+    )
+    assert state is not None and dit.history == [state]
+    for sigma in state.sigmas:
+        assert state.tau_for_sigma(sigma) in SOL_DEFAULT_TAUS
 
 
 def test_res2s_evaluation_sigmas_match_the_loop():

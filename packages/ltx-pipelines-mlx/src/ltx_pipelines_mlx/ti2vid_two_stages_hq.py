@@ -369,7 +369,9 @@ class TI2VidTwoStagesHQPipeline(TI2VidTwoStagesPipeline):
         # Stage 2: res_2s without guidance, as upstream (``SimpleDenoiser`` +
         # ``res2s_audio_video_denoising_loop`` on the stage-2 distilled sigmas).
         self._pre_denoise_flush(video_state_2, audio_state_2)
-        sparse = self._start_stage2_sparse_attention(sigmas_2, res2s_evaluation_sigmas(sigmas_2))
+        sparse = self._start_stage2_sparse_attention(
+            sigmas_2, res2s_evaluation_sigmas(sigmas_2), default_video_tokens=video_state_2.latent.shape[1]
+        )
         try:
             output_2 = res2s_denoise_loop(
                 model=x0_model,

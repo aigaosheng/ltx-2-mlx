@@ -477,7 +477,7 @@ class A2VidPipelineTwoStage(TI2VidTwoStagesPipeline):
         )
 
         self._pre_denoise_flush(video_state_2, audio_state_2)
-        sparse = self._start_stage2_sparse_attention(sigmas_2)
+        sparse = self._start_stage2_sparse_attention(sigmas_2, default_video_tokens=video_state_2.latent.shape[1])
         try:
             output_2 = denoise_loop(
                 model=x0_model,

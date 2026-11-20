@@ -1884,15 +1884,15 @@ Apache-2.0) to the video self-attention of the distilled stage 2, the scope NVID
 ```bash
 ltx-2-mlx generate --distilled ...                             # unset: on from 14,000 stage-2 video tokens (default)
 LTX2_SOL_TAU=off ltx-2-mlx generate --distilled ...            # always dense
-LTX2_SOL_TAU=1.0,1.25,1.5 ltx-2-mlx generate --distilled ...   # explicit taus: on at any size, dev stage 2 included
+LTX2_SOL_TAU=1.0,1.25,1.5 ltx-2-mlx generate --distilled ...   # explicit taus: on at any size
 ```
 
-**Default (changes the default output of large distilled renders).** With `LTX2_SOL_TAU` unset,
-`DistilledPipeline._stage2` (`generate --distilled` / `--dfr`, `a2v --distilled` / `--dfr`, `extend --distilled`) runs
-sparse with `SOL_DEFAULT_TAUS = (1.0, 1.25, 1.5)` when its stage-2 video sequence (generated tokens plus appended
+**Default (changes the default output of large renders).** With `LTX2_SOL_TAU` unset, every stage 2 runs
+sparse — `DistilledPipeline._stage2` (`generate --distilled` / `--dfr`, `a2v --distilled` / `--dfr`, `extend
+--distilled`) and the dev stage 2 of `--two-stage`, `--two-stages-hq` (both res_2s evaluations) and `a2v` — with `SOL_DEFAULT_TAUS = (1.0, 1.25, 1.5)` when its stage-2 video sequence (generated tokens plus appended
 conditioning tokens, as the `[estimate]` line counts them) has at least `SOL_DEFAULT_MIN_VIDEO_TOKENS = 14_000` tokens
-(`sol_default_from_env`, `_start_stage2_sparse_attention(..., default_video_tokens=...)`). Below it, and in the dev
-stage 2 of `--two-stage`, `--two-stages-hq` and `a2v` (not evaluated), unset stays dense, byte-identical to before.
+(`sol_default_from_env`, `_start_stage2_sparse_attention(..., default_video_tokens=...)`). Below it unset stays
+dense, byte-identical to before. The dev stage 2 joined the default after its own gate (table below).
 `off` is dense everywhere; an explicit list applies to every stage 2 at any size, as before. Gate (M5 Pro 48 GB, 2.5 q8,
 float16, I2V from a front-facing close-up, seed 7, one render per arm, dense → Sol): `--distilled` 1024×576×121 (9,216
 tokens) stage-2 step 28.1 → 30.3 s, ArcFace median 0.720 → 0.694; `--dfr` ×121 (14,400) 59.6 → 51.5 s (−14 %), 0.806
@@ -1929,7 +1929,7 @@ How it works (`model/transformer/sparse_attention.py`):
   live). On `--two-stages-hq` res_2s evaluates twice per step, the second time at the substep
   `sqrt(sigma_i * sigma_i+1)`, and ends with an evaluation at 0.0011: the table lists every evaluation
   (`res2s_evaluation_sigmas` in `utils/samplers.py`), each with its step's tau, so none falls back to dense. Tests:
-  `tests/test_sparse_attention_dev_stage2.py`. Not measured on the dev stage 2 yet (quality or speed). Stage 1, the DFR
+  `tests/test_sparse_attention_dev_stage2.py`. Measured on the dev stage 2: see the table after the distilled ones below. Stage 1, the DFR
   temporal rounds and spatial epilogue, and the other pipelines (single-stage `retake --distilled` included) are
   untouched. Under `--low-ram` the streamed model attaches the state to whichever block is bound
   and runs the eager shared block while it is on (the compiled block would replay the tau and routing of the step it
@@ -1970,6 +1970,22 @@ lower): later frames see the conditioning frame only through its centroids. Keep
 every query (a "sink") recovered a third to all of that, but made a stage-2 step up to 8.5 % slower (166 s instead of
 153 s at 32,640 tokens) and raised the background warping error in three of five I2V runs, with no visible difference
 in the clips, so it is not included.
+
+Measured on the dev stage 2 (M5 Pro 48 GB, 2.5 q8, float16, I2V from a front-facing close-up, 1024×576, seed 7,
+the commands' default steps and guidance, one render per arm, `LTX2_SOL_TAU=off` → `1.0,1.25,1.5`; stage 1 is the
+same work in both arms; ArcFace median to the start image over every 4th frame, Whisper large-v3-turbo WER):
+
+| run | stage-2 tokens | stage 2 dense → Sol | whole render | PSNR / SSIM | ArcFace dense → Sol | WER |
+|---|---:|---:|---:|---:|---:|---:|
+| `--two-stage` ×121 | 9,216 | 71 → 66 s (−7 %) | 593 → 650 s | 29.6 dB / 0.856 | 0.685 → 0.673 | 0 / 0 |
+| `--two-stage` ×241 | 17,856 | 188 → 134 s (−29 %) | 1298 → 1226 s (−6 %) | 29.0 dB / 0.837 | 0.880 → 0.859 | 0 / 0 |
+| `--two-stages-hq` ×241 (329 sparse calls: both res_2s evaluations) | 17,856 | 320 → 263 s (−18 %) | 1637 → 1590 s (−3 %) | 28.0 dB / 0.816 | 0.901 → 0.873 | 0 / 0 |
+| `a2v` ×241 (speech track of an earlier render) | 17,856 | 157 → 133 s (−15 %) | 1228 → 1190 s (−3 %) | 29.2 dB / 0.854 | 0.740 → 0.725 | 0 / 0 |
+
+Every ArcFace drop (0.012–0.028) is within the 0.05 gate; frames show the same picture, no block artifacts, the same
+motion. The whole-render gain is small because the 30-step guided stage 1 dominates (stage 1 also varied by ±1 min
+between arms on battery: the ×121 pair is slower overall with a faster stage 2). As on the distilled path, the gain is
+within noise at 9,216 tokens and real from ~14k up, so the dev stage 2 takes the same 14k default. Checked end to end: with `LTX2_SOL_TAU` unset, `--two-stage` ×241 and `a2v` ×241 are byte-identical (sha256) to the explicit-tau renders above.
 
 Tests: `tests/test_sparse_attention.py` (kernel vs dense at `tau = -inf` and vs a plain-MLX Sol reference at finite
 tau, routing rules, sigma-to-tau selection, the frame size, the module guards, the model and streamed wiring, the
