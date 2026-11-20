@@ -128,10 +128,26 @@ def test_23_pack_keeps_v1_1_upsampler(tmp_path, monkeypatch):
     assert pipe._resolve_upsampler_path().name == "spatial_upscaler_x2_v1_1.safetensors"
 
 
-def test_teacache_raises_on_25_pack(tmp_path, monkeypatch):
-    """Verify that enable_teacache=True raises ValueError on an LTX-2.5 pack."""
+def test_teacache_uses_the_25_calibration_on_25_pack(tmp_path, monkeypatch):
+    """On an LTX-2.5 pack TeaCache runs with the 2.5 Euler coefficients and threshold (no refusal)."""
+    from ltx_pipelines_mlx.ti2vid_two_stages import LTX25_TEACACHE_COEFFICIENTS, LTX25_TEACACHE_THRESH
+
     pipe = _make_two_stage(tmp_path, monkeypatch, ltx25=True)
-    with pytest.raises(ValueError, match="TeaCache"):
+    controller = pipe._make_stage1_teacache(True, 30, None)
+    assert controller.coefficients == LTX25_TEACACHE_COEFFICIENTS
+    assert controller.rel_l1_thresh == LTX25_TEACACHE_THRESH
+    assert pipe._make_stage1_teacache(True, 30, 0.8).rel_l1_thresh == 0.8
+
+
+def test_teacache_reaches_text_encoding_on_25_pack(tmp_path, monkeypatch):
+    """enable_teacache=True no longer stops an LTX-2.5 run before text encoding."""
+    pipe = _make_two_stage(tmp_path, monkeypatch, ltx25=True)
+
+    def boom(*a, **k):
+        raise _AbortError
+
+    monkeypatch.setattr(pipe, "_encode_text_with_negative", boom, raising=False)
+    with pytest.raises(_AbortError):
         pipe.generate_two_stage(prompt="a fox", num_frames=9, frame_rate=24.0, enable_teacache=True)
 
 
@@ -157,11 +173,34 @@ def test_teacache_still_allowed_on_23_pack(tmp_path, monkeypatch):
         pipe.generate_two_stage(prompt="a fox", num_frames=9, frame_rate=24.0, enable_teacache=True)
 
 
-def test_teacache_raises_on_25_pack_hq(tmp_path, monkeypatch):
-    """Verify that enable_teacache=True raises ValueError on an LTX-2.5 pack (HQ pipeline)."""
+def test_teacache_uses_the_25_res2s_calibration_on_25_pack_hq(tmp_path, monkeypatch):
+    """On an LTX-2.5 pack the HQ pipeline runs TeaCache with the 2.5 res_2s coefficients (no refusal)."""
+    from ltx_pipelines_mlx.ti2vid_two_stages_hq import LTX25_HQ_TEACACHE_COEFFICIENTS, LTX25_HQ_TEACACHE_THRESH
+
     pipe = _make_two_stage_hq(tmp_path, monkeypatch, ltx25=True)
-    with pytest.raises(ValueError, match="TeaCache"):
+    controller = pipe._make_stage1_teacache(True, 15, None)
+    assert controller.coefficients == LTX25_HQ_TEACACHE_COEFFICIENTS
+    assert controller.rel_l1_thresh == LTX25_HQ_TEACACHE_THRESH
+
+    def boom(*a, **k):
+        raise _AbortError
+
+    monkeypatch.setattr(pipe, "_encode_text_with_negative", boom, raising=False)
+    with pytest.raises(_AbortError):
         pipe.generate_two_stage(prompt="a fox", num_frames=9, frame_rate=24.0, enable_teacache=True)
+
+
+def test_teacache_keeps_the_23_calibrations_on_23_pack(tmp_path, monkeypatch):
+    """2.3 packs keep their own Euler and res_2s coefficients."""
+    from ltx_pipelines_mlx.ti2vid_two_stages import LTX2_TEACACHE_COEFFICIENTS, LTX2_TEACACHE_THRESH
+    from ltx_pipelines_mlx.ti2vid_two_stages_hq import LTX2_HQ_TEACACHE_COEFFICIENTS, LTX2_HQ_TEACACHE_THRESH
+
+    (tmp_path / "euler").mkdir()
+    (tmp_path / "hq").mkdir()
+    euler = _make_two_stage(tmp_path / "euler", monkeypatch, ltx25=False)._make_stage1_teacache(True, 30, None)
+    assert (euler.coefficients, euler.rel_l1_thresh) == (LTX2_TEACACHE_COEFFICIENTS, LTX2_TEACACHE_THRESH)
+    hq = _make_two_stage_hq(tmp_path / "hq", monkeypatch, ltx25=False)._make_stage1_teacache(True, 15, None)
+    assert (hq.coefficients, hq.rel_l1_thresh) == (LTX2_HQ_TEACACHE_COEFFICIENTS, LTX2_HQ_TEACACHE_THRESH)
 
 
 def test_teacache_still_allowed_on_23_pack_hq(tmp_path, monkeypatch):

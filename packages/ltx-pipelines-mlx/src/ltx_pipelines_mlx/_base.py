@@ -170,7 +170,7 @@ class BasePipeline:
     """
 
     #: Whether the checkpoint is an LTX-2.5 weight pack. Declared here (not just
-    #: on subclasses) so shared helpers like ``_check_teacache_supported`` can
+    #: on subclasses) so shared helpers like ``_require_generated_keyframes_support`` can
     #: read it safely regardless of which pipeline family sets it.
     _is_25: bool = False
     #: ``False`` skips audio decoders (load + decode + mux) and writes an mp4
@@ -348,25 +348,6 @@ class BasePipeline:
     # ------------------------------------------------------------------
     # Shared component loading methods (used by subclass pipelines)
     # ------------------------------------------------------------------
-
-    def _check_teacache_supported(self, enable_teacache: bool) -> None:
-        """Raise ValueError if TeaCache is requested on an LTX-2.5 pack.
-
-        TeaCache coefficients are calibrated for LTX-2.3 only and do not
-        transfer to 2.5 packs, which use different sampler dynamics (ancestral
-        vs deterministic Euler, different per-step input/output correlations).
-
-        Args:
-            enable_teacache: Whether TeaCache was requested.
-
-        Raises:
-            ValueError: When both enable_teacache is True and the pack is LTX-2.5.
-        """
-        if enable_teacache and self._is_25:
-            raise ValueError(
-                "TeaCache is calibrated for LTX-2.3 only; its polynomial does not "
-                "transfer to 2.5 packs. Drop --enable-teacache for this model."
-            )
 
     def _require_generated_keyframes_support(self, generated_keyframes: int | Sequence[int]) -> None:
         """Refuse generated keyframe slots on a checkpoint without the keyframe embedding.

@@ -956,7 +956,7 @@ Two-stage pipeline for higher-resolution generation. Requires the dev model + di
 
 ### TeaCache (opt-in stage 1 acceleration)
 
-Timestep-aware residual caching (Liu et al., *Timestep Embedding Aware Cache*) for `TI2VidTwoStagesPipeline.generate_two_stage`. Engine lives in `mlx-arsenal>=0.2.4` (`TeaCacheController`); LTX-2-specific calibrated coefficients + threshold live in `ti2vid_two_stages.py` (`LTX2_TEACACHE_COEFFICIENTS`, `LTX2_TEACACHE_THRESH`).
+Timestep-aware residual caching (Liu et al., *Timestep Embedding Aware Cache*) for `TI2VidTwoStagesPipeline.generate_two_stage`. Engine lives in `mlx-arsenal>=0.2.4` (`TeaCacheController`); LTX-2-specific calibrated coefficients + threshold live in `ti2vid_two_stages.py` (`LTX2_TEACACHE_COEFFICIENTS`, `LTX2_TEACACHE_THRESH`; `LTX25_TEACACHE_*` for 2.5 packs) and `ti2vid_two_stages_hq.py` (`LTX2_HQ_TEACACHE_*`, `LTX25_HQ_TEACACHE_*`); `_make_stage1_teacache` picks the pack's generation (`self._is_25`).
 
 ```python
 pipeline.generate_and_save(
@@ -966,7 +966,7 @@ pipeline.generate_and_save(
 )
 ```
 
-Equivalent CLI flag (works on `--two-stage`, `--two-stages-hq` and `a2v`, whose stage 1 is the same Euler + CFG loop and reuses the Euler coefficients via `TI2VidTwoStagesPipeline._make_stage1_teacache`; ~1.30× at 30 steps on a2v, where the default `stg_scale=1.0` also caches the STG pass; refused on LTX-2.5 packs):
+Equivalent CLI flag (works on `--two-stage`, `--two-stages-hq` and `a2v`, whose stage 1 is the same Euler + CFG loop and reuses the Euler coefficients via `TI2VidTwoStagesPipeline._make_stage1_teacache`; ~1.30× at 30 steps on a2v, where the default `stg_scale=1.0` also caches the STG pass; 2.3 and 2.5 packs, each with its own calibration):
 
 ```bash
 ltx-2-mlx generate --prompt "..." --two-stage -f 97 --frame-rate 24 --enable-teacache -o out.mp4
@@ -1017,6 +1017,25 @@ LTX-2 stage 1 has weak per-step input/output L1 correlation (Pearson 0.41) and h
 - `scripts/fit_teacache_poly.py` (offline robust polyfit; tries deg 1-N, picks lowest stable)
 - Hooks in `transformer/model.py` (`tap` + `block_stack_override` on `LTXModel.__call__`)
 - `samplers.py:guided_denoise_loop` (`teacache=` kwarg with per-pass `_run_pass` dispatcher)
+
+**LTX-2.5** (`LTX25_TEACACHE_*`, `LTX25_HQ_TEACACHE_*`). Calibrated on the 2.5 q8 pack (M5 Pro 48 GB, 2026-11-20,
+`calibrate_teacache.py` at 480×704×97, `stg_scale` 0, seed 2026, five prompts: speech close-up, running dog, aerial
+coast, kitchen, neon city; 21 min Euler, 28 min res_2s). Euler, 30 steps: 145 deltas, `delta_in` 0.024–0.543, Pearson
+0.63, degree 1 `y = 2.244 * x + 0.214`. res_2s, 15 steps (the HQ default, where 2.3 was calibrated at 30): 70 deltas,
+`delta_in` 0.138–1.016; one residual delta of 15.5 (the rest stay below 1.3) is dropped, without which no degree is
+stable; degree 1 on the other 69, Pearson 0.59, `y = 1.002 * x + 0.071`. The defaults stay 0.5 / 1.0. Replaying the
+recorded deltas through the controller: Euler skips 35 % of the steps at 0.5 (the 2.3 polynomial would skip 17 %),
+61 % at 1.0; res_2s has the same cliff as on 2.3 (7 % at 0.5, 25 % at 0.75, 48 % at 1.0). Validated (2.5 q8, M5 Pro,
+float16, T2V 704×480×97, seed 5, a speech prompt, default thresholds, one render per arm):
+
+| run | stage 1 off → on | whole render | Whisper WER off / on |
+|---|---:|---:|---:|
+| `--two-stage` (STG 1.0) | 207 → 146 s (1.42×) | 256 → 195 s (−24 %) | 0 / 0 |
+| `--two-stages-hq` | 268 → 145 s (1.85×) | 359 → 238 s (−34 %) | 0 / 0 |
+
+Every render is clean (no flicker: frame-to-frame brightness changes under 0.71/255). As on 2.3 the TeaCache render is
+another sample at the same seed (another man, another workshop on both paths); the HQ TeaCache render moves more
+(mean frame change 3.8 vs 1.9, smooth head and body motion).
 
 **Re-calibration**: run on fresh host. ~22 min/prompt × 5 prompts ≈ 1h45. Then `python -m ltx_pipelines_mlx.scripts.fit_teacache_poly <calibration.json>` to validate stability and produce a paste-ready snippet.
 
@@ -1574,7 +1593,7 @@ dtype on entry (like the conv decoder) and the same decode peaks at ~12 GB (5.8 
 | `lipdub` | not yet on 2.5 (no 2.5 Dub-It LoRA published) |
 | `hdr-ic-lora` | supported, **2.5 only** (upstream v1.4 SDR-to-HDR IC-LoRA, ACEScct); Experimental, validated end to end on real weights (see "HDR IC-LoRA Pipeline" › Status) |
 | `enhance` / `--enhance-prompt` | raises `NotImplementedError` (`_guard_enhance_not_gemma4`) — Gemma 3 only |
-| `--enable-teacache` | raises `ValueError` — 2.3 polynomial isn't calibrated for 2.5 |
+| `--enable-teacache` | supported on `--two-stage`, `--two-stages-hq` and `a2v` with 2.5-specific calibrations (`LTX25_TEACACHE_*`, `LTX25_HQ_TEACACHE_*`; see TeaCache); still refused on `--distilled` (no CFG stage 1) |
 | Prompt Relay | supported — validated e2e on 2.5 `--distilled` and the `--dfr` base path (see "Prompt Relay"); token ranges pinned against the pack's Gemma-4 tokenizer; audio relay (`audio_attn2`) validated on 2.5 `--distilled` |
 | Modality tiling | validated on 2.5 `--distilled` (see "Position layout divergence" under Modality Tiling) |
 | NAG (`--nag`, negative prompt on `--distilled` / `--dfr`) | experimental — validated e2e on 2.5 `--distilled` and `--dfr` (see "Negative prompt without CFG: NAG") |
@@ -1674,7 +1693,7 @@ noise), matching upstream.
 - `packages/ltx-pipelines-mlx/src/ltx_pipelines_mlx/utils/generation.py` — `is_ltx25_pack()`.
 - `packages/ltx-core-mlx/src/ltx_core_mlx/text_encoders/gemma/encoders/encoder_configurator.py` — `select_text_encoder()`, `check_gemma_version()`.
 - `packages/ltx-pipelines-mlx/src/ltx_pipelines_mlx/ti2vid_two_stages.py` — `_resolve_upsampler_path()` (`_is_25` resolved in `__init__` via `is_ltx25_pack`; the `_is_25: bool = False` class attribute lives on `BasePipeline`).
-- `tests/test_ltx25_distilled.py` — routing, sigma-table, TeaCache-guard, upsampler-resolution tests.
+- `tests/test_ltx25_distilled.py` — routing, sigma-table, TeaCache-guard (distilled), upsampler-resolution tests.
 
 ---
 

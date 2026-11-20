@@ -154,6 +154,7 @@ Expected: ~15% on two-stage stage 1 (most of it from item 1, already in the tree
 
 ### Phase 4 (optional, changes samples): step reduction
 12. **Recalibrate TeaCache for the 2.5 dev stage 1** using the existing `packages/ltx-pipelines-mlx/src/ltx_pipelines_mlx/scripts/calibrate_teacache.py` / `fit_teacache_poly.py` (~1h45 per sampler). It is refused on 2.5 today (`_base.py:352-368`). Note that TeaCache disables STG prefix sharing (item 1), so measure against the item-1 baseline.
+    - Done on `feat/teacache-ltx25` (M5 Pro, 2.5 q8, 2026-11-20): 21 min Euler + 28 min res_2s calibration (not 1h45 each on this host). `LTX25_TEACACHE_COEFFICIENTS = [2.244, 0.214]` (Pearson 0.63) and `LTX25_HQ_TEACACHE_COEFFICIENTS = [1.002, 0.071]` (Pearson 0.59, one outlier dropped), default thresholds 0.5 / 1.0; the 2.5 refusal is gone from `--two-stage`, `--two-stages-hq` and `a2v`. Stage 1 with TeaCache (704×480×97, seed 5, STG on, i.e. against the item-1 baseline): 1.42× Euler, 1.85× res_2s; whole render −24 % / −34 %; clean, WER 0, another sample at the same seed as on 2.3. Details in `CLAUDE.md` › TeaCache.
 
 ## Critical files
 - `packages/ltx-core-mlx/src/ltx_core_mlx/model/transformer/{model.py,transformer.py,attention.py,rope.py,adaln.py,feed_forward.py}`

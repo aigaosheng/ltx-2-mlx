@@ -1,4 +1,4 @@
-"""A2VidPipelineTwoStage: stage-1 TeaCache wiring, the LTX-2.5 guard and input validation.
+"""A2VidPipelineTwoStage: stage-1 TeaCache wiring (2.3 and 2.5 calibrations) and input validation.
 
 These drive ``generate_and_save`` (and the ``a2v`` CLI handler) over a synthetic pack,
 with the heavy stages stubbed, and stop inside the stage-1 loop or at the first error.
@@ -98,22 +98,14 @@ def test_teacache_off_by_default(stubbed_a2v):
     assert run()["teacache"] is None
 
 
-def test_teacache_rejected_on_25_pack_before_any_load(tmp_path, monkeypatch):
+def test_teacache_uses_the_25_euler_calibration_on_25_pack(tmp_path):
+    from ltx_pipelines_mlx.ti2vid_two_stages import LTX25_TEACACHE_COEFFICIENTS, LTX25_TEACACHE_THRESH
+
     pipe = _make_a2v(tmp_path, ltx25=True)
+    controller = pipe._make_stage1_teacache(True, 30, None)
 
-    def must_not_load():
-        raise AssertionError("the guard must fire before the audio encoder loads")
-
-    monkeypatch.setattr(pipe, "_load_audio_encoder", must_not_load)
-    with pytest.raises(ValueError, match="TeaCache"):
-        pipe.generate_and_save(
-            prompt="a singer",
-            output_path=str(tmp_path / "out.mp4"),
-            audio_path="song.wav",
-            num_frames=9,
-            frame_rate=24.0,
-            enable_teacache=True,
-        )
+    assert controller.coefficients == LTX25_TEACACHE_COEFFICIENTS
+    assert controller.rel_l1_thresh == LTX25_TEACACHE_THRESH
 
 
 def test_cli_a2v_forwards_the_teacache_flags(monkeypatch, tmp_path):
