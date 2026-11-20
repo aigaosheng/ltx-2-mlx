@@ -69,7 +69,7 @@ Fourth pass (branch `perf/denoise-remaining`, M5 Pro 48 GB, 2.5 q8, float16):
 
 - Item 8 default: shipped on `feat/sol-default-14k`. With `LTX2_SOL_TAU` unset the distilled stage 2 runs Sol from 14,000 video tokens (`SOL_DEFAULT_MIN_VIDEO_TOKENS`); below that, and on the dev stage 2, unset stays dense. sha256: unset at 17,856 tokens equals the explicit-tau render, unset at 9,216 the dense one.
 
-Still open: item 12 (TeaCache on 2.5: ~1h45 calibration per sampler).
+Nothing left open: item 12 (TeaCache on 2.5) is done; see its entry under Phase 4.
 
 Earlier review notes:
 - **Item 1 (STG prefix sharing): implemented** (now committed). `BlockPrefix`, `capture_prefix` / `resume_prefix` on `LTXModel.__call__`, `stg_block_prefix` in `samplers.py`, `LTX2_STG_PREFIX_REUSE`, `tests/test_stg_prefix_reuse.py`.
