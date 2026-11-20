@@ -260,9 +260,10 @@ class TI2VidTwoStagesPipeline(BasePipeline):
             evaluations: ``(sigma, step)`` of every model evaluation when a sampler evaluates more than once per
                 step (res_2s: :func:`~ltx_pipelines_mlx.utils.samplers.res2s_evaluation_sigmas`); each gets its
                 step's tau. ``None``: one evaluation per step at ``sigmas[:-1]``.
-            default_video_tokens: The stage-2 video sequence length, passed only by the stages the default covers
-                (``DistilledPipeline._stage2``). With ``LTX2_SOL_TAU`` unset, :data:`SOL_DEFAULT_TAUS` apply when it
-                reaches :data:`SOL_DEFAULT_MIN_VIDEO_TOKENS`. ``None``: no default (the dev stage 2 stays opt-in).
+            default_video_tokens: The stage-2 video sequence length (every stage 2 passes it: the distilled one and
+                the dev one of ``--two-stage``, ``--two-stages-hq`` and ``a2v``). With ``LTX2_SOL_TAU`` unset,
+                :data:`SOL_DEFAULT_TAUS` apply when it reaches :data:`SOL_DEFAULT_MIN_VIDEO_TOKENS`. ``None``: no
+                default.
         """
         taus = self.sol_taus
         by_default = (
@@ -806,7 +807,7 @@ class TI2VidTwoStagesPipeline(BasePipeline):
             stage2_x0_model = X0Model(TiledLTXModel(self.dit, tiler_2))
 
         self._pre_denoise_flush(video_state_2, audio_state_2)
-        sparse = self._start_stage2_sparse_attention(sigmas_2)
+        sparse = self._start_stage2_sparse_attention(sigmas_2, default_video_tokens=video_state_2.latent.shape[1])
         try:
             output_2 = denoise_loop(
                 model=stage2_x0_model,

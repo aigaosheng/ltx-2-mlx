@@ -71,6 +71,8 @@ Fourth pass (branch `perf/denoise-remaining`, M5 Pro 48 GB, 2.5 q8, float16):
 
 Nothing left open: item 12 (TeaCache on 2.5) is done; see its entry under Phase 4.
 
+Follow-up, Sol on the dev stage 2 (item 7's paths; branch `docs/sol-dev-stage2-eval`, M5 Pro, 2.5 q8, float16, I2V close-up, seed 7, dense → Sol): `--two-stage` stage 2 71 → 66 s at 9,216 tokens, 188 → 134 s (−29 %) at 17,856; `--two-stages-hq` 320 → 263 s (−18 %); `a2v` 157 → 133 s (−15 %). ArcFace drop 0.012–0.028 (gate 0.05), WER 0, 28–29.6 dB PSNR. Whole renders only −3 to −6 % (the guided stage 1 dominates). The gate passes, so the 14k-token default now covers these paths too (`feat!:` on the same branch). Table in `CLAUDE.md` › Block-sparse stage-2 attention.
+
 Earlier review notes:
 - **Item 1 (STG prefix sharing): implemented** (now committed). `BlockPrefix`, `capture_prefix` / `resume_prefix` on `LTXModel.__call__`, `stg_block_prefix` in `samplers.py`, `LTX2_STG_PREFIX_REUSE`, `tests/test_stg_prefix_reuse.py`.
 - **Item 6 overtaken: float16 is now the default compute dtype in the working tree** (`LTX2_COMPUTE_DTYPE` unset → float16; `float32` restores the old path). That flip skipped this plan's gate: measured on `--distilled`, `--dfr` and the relay/NAG runs only. Before it ships (as `feat!:`, a 0.y bump), run the quality gate on `--two-stage` stage 1 (CFG + STG), `a2v`, `retake` / `extend`, `ic-lora` and `lipdub`.

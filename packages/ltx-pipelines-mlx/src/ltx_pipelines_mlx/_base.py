@@ -206,9 +206,8 @@ class BasePipeline:
         # LTX2_LORA_MODE is parsed here so a bad value fails before any work: it is only consulted
         # when a LoRA is attached, which for --dfr is after stage 1.
         self.lora_mode = lora_mode_from_env()
-        # LTX2_SOL_TAU: block-sparse video self-attention in stage 2. Explicit taus apply to every stage 2;
-        # unset (sol_default) turns the default taus on in the distilled stage 2 from 14k video tokens; "off" =
-        # dense. Parsed here so a malformed value fails before any model load.
+        # LTX2_SOL_TAU: block-sparse video self-attention in stage 2. Explicit taus apply at any size; unset
+        # (sol_default) turns the default taus on in every stage 2 from 14k video tokens; "off" = dense. Parsed here so a malformed value fails before any model load.
         self.sol_taus = sol_taus_from_env()
         self.sol_default = sol_default_from_env()
 
