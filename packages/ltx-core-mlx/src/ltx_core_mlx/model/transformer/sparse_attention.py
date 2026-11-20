@@ -1,4 +1,4 @@
-"""Block-sparse video self-attention for the stage-2 refine (Sol routing), opt-in.
+"""Block-sparse video self-attention for the stage-2 refine (Sol routing).
 
 Sol-Attn (NVIDIA, arXiv 2607.24027; reference code in NVlabs/Sana, ``sol-engine`` branch, Apache-2.0) routes attention
 per 64-token block. For every head, each 64-token block gets a query centroid and a key centroid. A query block attends
@@ -21,7 +21,11 @@ One routing rule beyond the reference, measured on LTX-2.5 stage 2: with ``tempo
 some layers).
 
 Entry points: :func:`sparse_self_attention` (q, k, v -> output), :class:`SparseAttentionState` (what
-:meth:`LTXModel.set_sparse_attention` shares with the ``attn1`` modules), :func:`sol_taus_from_env`.
+:meth:`LTXModel.set_sparse_attention` shares with the ``attn1`` modules), :func:`sol_taus_from_env`,
+:func:`sol_default_from_env`.
+
+Default: with ``LTX2_SOL_TAU`` unset, the distilled stage 2 runs sparse with :data:`SOL_DEFAULT_TAUS` once its video
+sequence reaches :data:`SOL_DEFAULT_MIN_VIDEO_TOKENS` tokens; ``off`` keeps it dense, an explicit list applies at any size.
 """
 
 from __future__ import annotations
@@ -43,14 +47,19 @@ SOL_TAU_ENV = "LTX2_SOL_TAU"
 BLOCK = 64
 #: Sequences shorter than this keep the dense kernel (routing overhead, nothing to skip).
 MIN_TOKENS = 4096
+#: Taus of the default (NVIDIA's LTX-2.5 distilled config), one per stage-2 step.
+SOL_DEFAULT_TAUS: tuple[float, ...] = (1.0, 1.25, 1.5)
+#: With ``LTX2_SOL_TAU`` unset, the distilled stage 2 runs sparse from this many video tokens (M5 Pro, 2.5 q8:
+#: stage-2 step -14 % at 14,400 and -16 % at 17,856 tokens, within noise at 9,216; ArcFace drop <= 0.026).
+SOL_DEFAULT_MIN_VIDEO_TOKENS = 14_000
 
 
 def sol_taus_from_env() -> tuple[float, ...] | None:
     """Parse ``LTX2_SOL_TAU``.
 
     Returns:
-        ``None`` (unset or ``off``: dense attention, the default) or one ``tau`` per stage-2 step; the last value
-        repeats when a stage has more steps.
+        ``None`` (unset or ``off``: no explicit taus) or one ``tau`` per stage-2 step; the last value repeats when
+        a stage has more steps. Unset is not dense everywhere: see :func:`sol_default_from_env`.
 
     Raises:
         ValueError: On anything but a comma-separated list of finite numbers.
@@ -65,6 +74,14 @@ def sol_taus_from_env() -> tuple[float, ...] | None:
     if not all(math.isfinite(t) for t in taus):
         raise ValueError(f"{SOL_TAU_ENV}={value!r}: values must be finite")
     return taus
+
+
+def sol_default_from_env() -> bool:
+    """Whether ``LTX2_SOL_TAU`` is unset (or empty), i.e. the distilled stage 2 picks Sol by its token count.
+
+    ``off`` and an explicit tau list both return False.
+    """
+    return os.environ.get(SOL_TAU_ENV, "").strip() == ""
 
 
 @dataclass
@@ -572,11 +589,14 @@ def sparse_self_attention(
 __all__ = [
     "BLOCK",
     "MIN_TOKENS",
+    "SOL_DEFAULT_MIN_VIDEO_TOKENS",
+    "SOL_DEFAULT_TAUS",
     "SOL_TAU_ENV",
     "SparseAttentionState",
     "block_summaries",
     "build_route",
     "kernel_available",
+    "sol_default_from_env",
     "sol_taus_from_env",
     "sparse_self_attention",
 ]
